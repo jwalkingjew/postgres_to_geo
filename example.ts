@@ -5,13 +5,12 @@ const DB_ID = "bseocOYqflQMDdju75d";
 async function main() {
   const pgClient = new PostgreSQLClient();
   try {
-    const client = await pgClient.getClient();
-    const result = await client.query(`
+    const result = await pgClient.query(`
         SELECT * FROM "${DB_ID}".${TABLES.PROJECTS}
         ORDER BY __auto_number ASC
         LIMIT 100
     `);
-    console.log(result.rows.length);
+    console.log(result.length);
   } catch (error) {
     console.error(error);
   } finally {
