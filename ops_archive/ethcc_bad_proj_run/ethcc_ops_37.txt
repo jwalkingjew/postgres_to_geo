@@ -1,0 +1,17 @@
+[
+  {
+    "type": "DELETE_RELATION",
+    "id": "14c2ea61-ef08-4929-b184-c9862a02c165",
+    "spaceId": "b2565802-3118-47be-91f2-e59170735bac"
+  },
+  {
+    "type": "DELETE_RELATION",
+    "id": "917cb586-c70e-4579-956d-710b15c3fdf6",
+    "spaceId": "b2565802-3118-47be-91f2-e59170735bac"
+  },
+  {
+    "type": "DELETE_RELATION",
+    "id": "666be862-a45d-48a5-b348-b6d82408f0e5",
+    "spaceId": "b2565802-3118-47be-91f2-e59170735bac"
+  }
+]

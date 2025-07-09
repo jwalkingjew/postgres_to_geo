@@ -20,10 +20,12 @@ export const mainnetWalletAddress = "0x0A77FD6b13d135426c25E605a6A4F39AF72fD967"
 export const GEO_IDS = {
   coincarp: "2wrGpfxCX3sEL3gjUhG6or",
 
-  rootSpace: "64ed9ffa-e7b3-40f6-ae99-fbf6112d10f8",
-  cryptoSpace: "065d5e6f-0b3c-45b3-a5db-ace191e5a35c",
-  cryptoEventsSpace: "d4cd9afa-3edf-4739-8537-ebb46da159f7",
-  regionsSpace: "1f230cb3-145c-4e4b-b325-e85b0f8a212e",
+  appType: "JNCkB5MTz1gmQVHP8BLirw",
+
+  rootSpace: "2df11968-9d1c-489f-91b7-bdc88b472161",
+  cryptoSpace: "b2565802-3118-47be-91f2-e59170735bac",
+  cryptoEventsSpace: "dabe3133-4334-47a0-85c5-f965a3a94d4c",
+  regionsSpace: "aea9f05a-2797-4e7e-aeae-5059ada3b56b",
 
   project_type_id: "9vk7Q3pz7US3s2KePFQrJT",
   types_property_id: "Jfmby78N4BCseZinBmdVov",
@@ -195,6 +197,7 @@ export async function hasBeenEdited(ops: Array<Op>, entityId: string): Promise<b
 
 
 async function fetchWithRetry(query: string, variables: any, retries = 3, delay = 200) {
+    //console.log("FETCHING...")
     for (let i = 0; i < retries; i++) {
         const response = await fetch(QUERY_URL, {
             method: "POST",
@@ -205,11 +208,45 @@ async function fetchWithRetry(query: string, variables: any, retries = 3, delay 
         });
 
         if (response.ok) {
+           //console.log("DONE FETCHING")
             return await response.json();
         }
 
         if (i < retries - 1) {
             // Optional: only retry on certain error statuses
+            console.log("Retry #", i)
+            if (response.status === 502 || response.status === 503 || response.status === 504) {
+                await new Promise(resolve => setTimeout(resolve, delay * (2 ** i))); // exponential backoff
+            } else {
+                break; // for other errors, don’t retry
+            }
+        } else {
+            console.log("searchEntities");
+            console.log(`SPACE: ${variables.space}; PROPERTY: ${variables.property}; searchText: ${variables.searchText}; typeId: ${variables.typeId}`);
+            throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+    }
+}
+
+async function fetchWithRetry_new(query: string, variables: any, retries = 3, delay = 200) {
+    //console.log("FETCHING...")
+    for (let i = 0; i < retries; i++) {
+        const response = await fetch("https://v2-postgraphile.up.railway.app/graphiql", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ query, variables }),
+        });
+
+        if (response.ok) {
+           //console.log("DONE FETCHING")
+            return await response.json();
+        }
+
+        if (i < retries - 1) {
+            // Optional: only retry on certain error statuses
+            console.log("Retry #", i)
             if (response.status === 502 || response.status === 503 || response.status === 504) {
                 await new Promise(resolve => setTimeout(resolve, delay * (2 ** i))); // exponential backoff
             } else {
@@ -224,16 +261,18 @@ async function fetchWithRetry(query: string, variables: any, retries = 3, delay 
 }
 
 //export async function searchEntities(space: string | undefined, property: string, searchText: string, typeId: string | null = null) {
-export async function searchEntities({
+export async function searchEntities_orig({
   spaceId,
   property,
   searchText,
-  typeId
+  typeId,
+  notTypeId
 }: {
   spaceId?: string;
   property: string;
   searchText?: string;
   typeId?: string;
+  notTypeId?: string;
 }) {
   if (!searchText) {
     return null;
@@ -247,6 +286,8 @@ export async function searchEntities({
       $searchText: String!
       ${typeId ? '$typeId: String!' : ''}
       ${typeId ? '$typesPropertyId: String!' : ''}
+      ${notTypeId ? '$notTypeId: String!' : ''}
+      ${notTypeId ? '$typesPropertyId: String!' : ''}
     ) {
       entities(
         ${spaceId ? 'spaceId: $spaceId,' : ''}
@@ -256,6 +297,7 @@ export async function searchEntities({
             text: { is: $searchText }
           }
           ${typeId ? `relations: { typeId: $typesPropertyId, toEntityId: $typeId }` : ''}
+          ${notTypeId ? `not: { relations: { typeId: $typesPropertyId, toEntityId: $notTypeId } }` : ''}
         }
       ) {
         id
@@ -270,6 +312,10 @@ export async function searchEntities({
     ...(spaceId && { spaceId: normalizeToUUID_STRING(spaceId) }),
     ...(typeId && {
       typeId: normalizeToUUID_STRING(typeId),
+      typesPropertyId: SystemIds.TYPES_PROPERTY
+    }),
+    ...(notTypeId && {
+      notTypeId: normalizeToUUID_STRING(notTypeId),
       typesPropertyId: SystemIds.TYPES_PROPERTY
     })
   };
@@ -288,6 +334,309 @@ export async function searchEntities({
 
   return null;
 }
+
+export async function searchEntities_new({
+  spaceId,
+  property,
+  searchText,
+  typeId,
+  notTypeId
+}: {
+  spaceId?: string;
+  property?: string;
+  searchText?: string | string[];
+  typeId?: string;
+  notTypeId?: string;
+}) {
+
+  await new Promise(resolve => setTimeout(resolve, 200));
+
+  const isArray = Array.isArray(searchText);
+  const normalizedProperty = property ? normalizeToUUID_STRING(property) : undefined;
+  const normalizedSpaceId = spaceId ? normalizeToUUID_STRING(spaceId) : undefined;
+
+  console.log("HERE")
+  const query = `
+    query GetEntities(
+      ${normalizedSpaceId ? `$spaceId: String!` : ``}
+      ${typeId ? '$typesPropertyId: String!' : ''}
+      ${typeId ? `$typeId: String!` : ``}
+    ) {
+      entities(
+        filter: {
+          ${normalizedSpaceId ? `spaceIds: { in: [$spaceId] },` : ``}
+          ${typeId ? `
+          relations: {
+            some: {
+              toEntityId: { is: $typeId }
+              typeId: { is: $typesPropertyId }
+            }
+          }` : ``}
+        }
+      ) {
+        id
+        name
+        values {
+          nodes {
+            spaceId
+            propertyId
+            value
+          }
+        }
+        relations {
+          nodes {
+            id
+            spaceId
+            fromEntityId
+            toEntityId
+            typeId
+            entityId
+            position
+          }
+        }
+      }
+    }
+  `;
+
+  const variables: Record<string, any> = {
+    propertyId: normalizedProperty,
+    ...(normalizedSpaceId ? { spaceId: normalizedSpaceId } : {}),
+    ...(typeId ? { typeId: normalizeToUUID_STRING(typeId) } : {}),
+    ...(typeId ? { typesPropertyId: SystemIds.TYPES_PROPERTY } : {}),
+  };
+
+  console.log(query)
+
+  console.log(variables.propertyId)
+  console.log(variables.spaceId)
+
+  const data = await fetchWithRetry_new(query, variables);
+  console.log(data)
+  const entities = data?.data?.entities;
+
+  if (isArray) return entities;
+
+  if (entities?.length === 1) {
+    return entities[0]?.id;
+  } else if (entities?.length > 1) {
+    console.error("DUPLICATE ENTITIES FOUND...");
+    console.log(entities);
+    return entities[0]?.id;
+  }
+
+  return null;
+}
+
+export async function searchEntities({
+  spaceId,
+  property,
+  searchText,
+  typeId,
+  notTypeId
+}: {
+  spaceId?: string;
+  property: string;
+  searchText?: string | string[];
+  typeId?: string;
+  notTypeId?: string;
+}) {
+  if (!searchText || (Array.isArray(searchText) && searchText.length === 0)) {
+    return null;
+  }
+  await new Promise(resolve => setTimeout(resolve, 200));
+
+  const isArray = Array.isArray(searchText);
+  const normalizedProperty = normalizeToUUID_STRING(property);
+
+  // GraphQL variables section
+  const query = `
+    query GetEntities(
+      ${spaceId ? '$spaceId: String!' : ''}
+      ${searchText ? '$orFilters: [EntityFilter!]' : '' }
+      ${typeId ? '$typeId: String!' : ''}
+      ${typeId || notTypeId ? '$typesPropertyId: String!' : ''}
+      ${notTypeId ? '$notTypeId: String!' : ''}
+    ) {
+      entities(
+        ${spaceId ? 'spaceId: $spaceId,' : ''}
+        filter: {
+          ${searchText ? 'or: $orFilters' : '' }
+          ${typeId ? `relations: { typeId: $typesPropertyId, toEntityId: $typeId }` : ''}
+          ${notTypeId ? `not: { relations: { typeId: $typesPropertyId, toEntityId: $notTypeId } }` : ''}
+        }
+      ) {
+        id
+        name
+        ${isArray || !searchText ? `
+        values {
+          spaceId
+          propertyId
+          value
+        }
+        relations {
+          id
+          spaceId
+          fromId
+          toId
+          typeId
+          entityId
+          position
+        }` : ''}
+      }
+    }
+  `;
+
+  //console.log(query)
+
+  const orFilters = Array.isArray(searchText)
+    ? searchText.map(text => ({
+        value: {
+          property: normalizedProperty,
+          text: { is: cleanText(text) }
+        }
+      }))
+    : [{
+        value: {
+          property: normalizedProperty,
+          text: { is: cleanText(searchText) }
+        }
+      }];
+
+  const variables: Record<string, any> = {
+    orFilters,
+    ...(spaceId && { spaceId: normalizeToUUID_STRING(spaceId) }),
+    ...(typeId && {
+      typeId: normalizeToUUID_STRING(typeId),
+      typesPropertyId: SystemIds.TYPES_PROPERTY
+    }),
+    ...(notTypeId && {
+      notTypeId: normalizeToUUID_STRING(notTypeId),
+      typesPropertyId: SystemIds.TYPES_PROPERTY
+    })
+  };
+
+
+  const data = await fetchWithRetry(query, variables);
+  const entities = data?.data?.entities;
+
+  if (isArray) {
+    return entities;
+  }
+
+  if (entities?.length === 1) {
+    return entities[0]?.id;
+  } else if (entities?.length > 1) {
+    console.error("DUPLICATE ENTITIES FOUND...");
+    console.log(entities);
+    return entities[0]?.id;
+  }
+
+  return null;
+}
+
+export async function searchEntities_byType({
+  spaceId,
+  typeId
+}: {
+  spaceId?: string;
+  typeId?: string[];
+}) {
+  await new Promise(resolve => setTimeout(resolve, 200));
+
+  // GraphQL variables section
+  const query = `
+    query GetEntities(
+      ${spaceId ? '$spaceId: String!' : ''}
+      ${typeId ? '$typeId: [String!]' : ''}
+    ) {
+      entities(
+        ${spaceId ? 'spaceId: $spaceId,' : ''}
+        ${typeId ? 'filter: { types: { in: $typeId } }' : ''}
+      ) {
+        id
+        name
+        values {
+          spaceId
+          propertyId
+          value
+        }
+        relations {
+          id
+          spaceId
+          fromId
+          toId
+          typeId
+          entityId
+          position
+        }
+      }
+    }
+  `;
+
+  const variables: Record<string, any> = {
+    ...(typeId && { typeId: typeId }),
+    ...(spaceId && { spaceId: normalizeToUUID_STRING(spaceId) }),
+  };
+
+  console.log(typeId)
+  const data = await fetchWithRetry(query, variables);
+  const entities = data?.data?.entities;
+  return entities;
+}
+
+export async function searchEntities_byId({
+  spaceId,
+  searchText, // array of IDs
+}: {
+  spaceId?: string;
+  searchText?: string[]; // now explicitly expecting an array of IDs
+}) {
+  if (!searchText || !Array.isArray(searchText) || searchText.length === 0) {
+    return null;
+  }
+
+  await new Promise(resolve => setTimeout(resolve, 200));
+
+  const query = `
+    query GetEntities(
+      ${spaceId ? '$spaceId: String!' : ''}
+      $ids: [String!]!
+    ) {
+      entities(
+        ${spaceId ? 'spaceId: $spaceId,' : ''}
+        filter: {
+          id: { in: $ids }
+        }
+      ) {
+        id
+        name
+        values {
+          spaceId
+          propertyId
+          value
+        }
+        relations {
+          id
+          spaceId
+          fromId
+          toId
+          typeId
+          entityId
+          position
+        }
+      }
+    }
+  `;
+
+  const variables: Record<string, any> = {
+    ids: searchText.map(id => normalizeToUUID_STRING(id)),
+    ...(spaceId && { spaceId: normalizeToUUID_STRING(spaceId) }),
+  };
+
+  const data = await fetchWithRetry(query, variables);
+  return data?.data?.entities ?? [];
+}
+
 
 //export async function searchEntity(entityId: string, spaceId?: string) {
 export async function searchEntity({
@@ -410,7 +759,12 @@ export const propertyToIdMap: Record<string, string> = {
   x_url: "2eroVfdaXQEUw314r5hr35",
   linkedin_url: "SRyePtjTYASwfq1kCjUaQf",
   date_founded: "97JK5WV4YeGeU3k5UtV5RX", //Date founded property
-  
+  telegram_url: "WepmF7ZjERNgYgPnJbKXve",
+  medium_url: "CD9kCdEfrbpESXQMVJ7Wx3",
+  discord_url: "NHUNHCVKpRjCYcbry57a9F",
+  github_url: "LdGTXNrzLfyqm3HGQoefsZ",
+  wallet_address: "A2txpy2v1ZQWQNxfEYLKPU",
+  x_followers: "eb1a5120-90b6-4eb4-a8d5-338f29744bea",
 
   //Investments relation entity
   funding_rounds: "A3FTmHJmJ2HipDShTeKiQ9", //Used on relation entity...
@@ -424,31 +778,73 @@ export const propertyToIdMap: Record<string, string> = {
   invested_in: "K5zhVJwyzZwgnzeXXTz77z", //invested in property - renamed to investments
   project: "PHy9PS2KoC8hnsAzYQdz9k", //"K5zhVJwyzZwgnzeXXTz77z" - Investments: property // "PHy9PS2KoC8hnsAzYQdz9k", //Raised by: property
 
-  //tag properties
+  //tag / relation properties
   related_industries: 'WAsByt3z8T5Z71PgvqFGcm',
   related_services_or_products: '2YYDYuhjcfLGKKaTGB3Eim',
   related_asset_categories: 'UrHA7JUtaTy6emMcTm1ht8', // TODO - confirm edits accepted
   related_technologies: 'GHjnB8sdWYRTjZ1Z8hEpsw', // TODO - confirm edits accepted
   tags: '5d9VVey3wusmk98Uv3v5LM',
-  
+  related_assets: "6JwPE1KYoghpUGGzATkh46",
+  related_platforms: "MuMLDVbHAmRjZQjhyk3HGx", // Network property
+  platform_id: "MuMLDVbHAmRjZQjhyk3HGx", // Network property
+
+  //Asset properties
+  symbol: "NMCZXJNatQS59U31sZKmMn",
+  max_supply: "7HuDtX2iJppMcWuZCEyPGx",
+  token_address: "Bi28i5Xf6kjPyqP6svNgdX",
+  price_usd: "P9kdgA83GGv7RwSJfQmrDp",
+  percent_change_30d: "YFanfTCQ5QewQoybgZ22NX",
+  percent_change_60d: "4v4oNCKUPRahPgVvYtfCTn",
+  market_cap_usd: "VZaBNbnHbDMbKCjVswHXP5",
+  tvl_usd: "5sSnsLsQRsvPsBFSXUFdcz",
+  created_at: "JWL5DRgGpwY7NtBruPaGiE", // last_updated column (should change the name of this to date_updated...)
+  related_ecosystems: "KJTYzcJDKmTDE4cnCshkZG",
+  rootdata_x_influence_index: "Rugt3bTuHEp5MHoQNQCQ5C",
+  pricing_models: "3eUu3TnbLD2xTT6y3rFqnm",
+  active_unique_wallets: "SwcANCHcxXtes5k6qGAJzU",
+
+  active_unique_wallets_24h: "AREigQLBNZT4U9VdNNPqqj",
+  active_unique_wallets_7d: "C2BBqdKnR1RBQpTCgXpXP1",
+  active_unique_wallets_30d: "UKz8nzNpDUz7hxYm6UYiWQ",
+
+  transaction_count_24h: "W8B3v8vDA78VpNZnrzyUgL",
+  transaction_count_7d: "9NJaNkCSY2AmL1VNEV4jC7",
+  transaction_count_30d: "N3JErurFymmU2iMtxYpwHH",
+
+  total_volume_24h: "Esu4cdFwbtDrC4i1soaEXe",
+  total_volume_7d: "EBiqRfZFADfSwtb5ZdyvTk",
+  total_volume_30d: "RpxusCGoSJC7eVSmX6XGW9",
+
+  total_balance_24h: "Qfe1piarLYi6R4JgNcHZ2Z",
+  total_balance_7d: "RPY7YoBWg1JHb8UmwZhXwJ",
+  total_balance_30d: "HQBtmHqcGW7mhEoLXPKU4q",
+
+  related_apps: "2kooB8MTNHXqBgFc6bKwjJ",
+  related_projects: "EcK9J1zwDzSQPTnBRcUg2A",
+
 };
+
 
 export const propertyToTypeIdMap: Record<string, string> = {
-  //tag types
-  related_industries: 'YA7mhzaafD2vnjekmcnLER',
-  related_services_or_products: '4AsBUG91niU59HAevRNsbQ',
+  //tag / relation types
+  related_industries: 'YA7mhzaafD2vnjekmcnLER', // Industry type
+  related_services_or_products: '4AsBUG91niU59HAevRNsbQ', // Service type
   related_asset_categories: 'YG3gRcykeAwG7VbinNL27j', // TODO - confirm edits accepted
   related_technologies: 'SAdaKzTJ37swD6ohJpFJE7', // TODO - confirm edits accepted
-  tags: 'UnP1LtXV3EhrhvRADFcMZK',
-  
+  tags: 'UnP1LtXV3EhrhvRADFcMZK', // Tag type
+  related_assets: "XgZFStBQiTP8a7ftKrT1FQ", // Asset type
+  related_platforms: "YCLXoVZho6C4S51g4AbF3C", // Network type
+  platform_id: "YCLXoVZho6C4S51g4AbF3C", // Network type
+  related_ecosystems: "YCLXoVZho6C4S51g4AbF3C", // Network type
+  pricing_models: "TGwxvFomquuYykMe3s536a",
 };
 
-export async function valuePropertyExistsOnGeo(spaceId: string, entityOnGeo: any, propertyId: string): Promise<boolean> {
+export function valuePropertyExistsOnGeo(spaceId: string, entityOnGeo: any, propertyId: string): boolean {
     let geoProperties;
 
     if (entityOnGeo) {
         geoProperties = entityOnGeo?.values?.filter(
-            (item) => 
+            (item: any) => 
                 item.spaceId === normalizeToUUID_STRING(spaceId) &&
                 item.propertyId === normalizeToUUID_STRING(propertyId)
         );
@@ -461,12 +857,12 @@ export async function valuePropertyExistsOnGeo(spaceId: string, entityOnGeo: any
     return false;
 }
 
-export async function relationPropertyExistsOnGeo(spaceId: string, entityOnGeo: any, propertyId: string): Promise<boolean> {
+export function relationPropertyExistsOnGeo(spaceId: string, entityOnGeo: any, propertyId: string): boolean {
     let geoProperties = [];
 
     if (entityOnGeo) {
         geoProperties = entityOnGeo?.relations?.filter(
-            (item) => 
+            (item: any) => 
                 item.spaceId === normalizeToUUID_STRING(spaceId) &&
                 item.typeId === normalizeToUUID_STRING(propertyId)
         );
@@ -479,7 +875,132 @@ export async function relationPropertyExistsOnGeo(spaceId: string, entityOnGeo: 
 }
 
 //export async function processNewRelation(currenOps: Array<Op>, spaceId: string, entityOnGeo: any, geoId: string, toEntityId: string, propertyId: string, position?: string, reset_position?: boolean, relationEntity?: string,): Promise<[Array<Op>, string]> {
-export async function processNewRelation({
+export function processNewRelation({
+  currenOps,
+  spaceId,
+  entityOnGeo,
+  fromEntityId,
+  toEntityId,
+  propertyId,
+  //position,
+  last_position,
+  //reset_position,
+  relationEntity
+}: {
+  currenOps: Array<Op>;
+  spaceId: string;
+  entityOnGeo?: any;
+  fromEntityId: string;
+  toEntityId: string;
+  propertyId: string;
+  //position?: string;
+  last_position?: string;
+  //reset_position?: boolean;
+  relationEntity?: string;
+}): { ops: Array<Op>; relationEntityId: string; position: string;} {
+  //TODO SHOULD I INSTEAD BE SENDING THE LAST POSITION IN AND THEN I COULD COMPARE WHETHER I NEED TO RESET THIS ONE?
+
+    let geoProperties;
+    const ops: Array<Op> = [];
+    let addOps;
+    let position;
+
+    if (!relationEntity) {
+      relationEntity = Id.generate();
+    }
+    if (last_position) {
+      position = Position.generateBetween(last_position, null)
+    } else {
+      position = Position.generateBetween(null, null)
+    }
+
+    // Search in the current ops whether relation exists...
+    const match = currenOps.find(op =>
+        op.type === "CREATE_RELATION" &&
+        op.relation.fromEntity === normalizeToUUID_STRING(fromEntityId) &&
+        op.relation.type === normalizeToUUID_STRING(propertyId) &&
+        op.relation.toEntity === normalizeToUUID_STRING(toEntityId)
+    );
+    if (match) {
+        return { ops: ops, relationEntityId: match.relation.entity, position: match.relation.position };
+    }
+ 
+    const args = arguments[0];
+    if (!("entityOnGeo" in args)) {
+      console.log("SEARCHING UNDEFINED")
+        //entityOnGeo = await searchEntity({
+        //    entityId: fromEntityId,
+        //    spaceId: spaceId
+        //});
+    }
+    if (entityOnGeo) {
+        
+        geoProperties = entityOnGeo?.relations?.filter(
+            (item) => 
+                item.spaceId === spaceId &&
+                item.typeId === normalizeToUUID_STRING(propertyId) &&
+                item.toId === normalizeToUUID_STRING(toEntityId)
+        );
+        if (!geoProperties) {
+            geoProperties = []
+        }
+
+        if (geoProperties.length == 0) {
+            addOps = Graph.createRelation({
+                toEntity: normalizeToUUID(toEntityId),
+                fromEntity: normalizeToUUID(fromEntityId),
+                type: normalizeToUUID(propertyId),
+                position: position,
+                entityId: normalizeToUUID(relationEntity)
+            });
+            ops.push(...addOps.ops);
+        } else {
+            if ((last_position) && (Position.compare(geoProperties?.[0]?.position, last_position) != 1)){
+                console.error("WRITE CODE TO UPDATE RELATION POSITION")
+                
+                //addOps = Graph.createRelation({
+                //  id: geoProperties?.[0]?.id,
+                //  position: position,
+                //})
+
+                //Update position of relation to correctly set one.
+                //geoProperties?.[0]?.id
+            } 
+            if ((geoProperties.length > 1)) {
+                console.error("DUPLICATE relations found on: ", fromEntityId)
+                for (let i = 1; i < geoProperties.length; i++) {
+                    addOps = Graph.deleteRelation({id: geoProperties?.[i]?.id})
+                    ops.push(...addOps.ops);
+                    console.log("DUPLICATES REMOVED")
+                }
+            }
+            relationEntity = geoProperties?.[0]?.entityId;
+            if (!relationEntity) {
+                relationEntity = "RELATION EXISTS - ERROR FINDING RELATION ENTITY"
+                console.error(relationEntity)
+                console.log(geoProperties)
+                
+            }
+            return { ops: ops, relationEntityId: relationEntity, position: geoProperties?.[0]?.position };
+        }
+    } else {
+        //console.log("From entity: ", normalizeToUUID(fromEntityId))
+        //console.log("To entity: ", normalizeToUUID(toEntityId))
+        //console.log("Type: ", normalizeToUUID(propertyId))
+        addOps = Graph.createRelation({
+            toEntity: normalizeToUUID(toEntityId),
+            fromEntity: normalizeToUUID(fromEntityId),
+            type: normalizeToUUID(propertyId),
+            position: position,
+            entityId: normalizeToUUID(relationEntity)
+        });
+        ops.push(...addOps.ops);
+    }
+
+    return { ops: ops, relationEntityId: relationEntity, position: position };
+}
+
+export async function processNewRelation_v1({
   currenOps,
   spaceId,
   entityOnGeo,
@@ -529,7 +1050,9 @@ export async function processNewRelation({
         return { ops: ops, relationEntityId: match.relation.entity, position: match.relation.position };
     }
  
-    if (entityOnGeo === undefined) {
+    const args = arguments[0];
+    if (!("entityOnGeo" in args)) {
+      console.log("SEARCHING UNDEFINED")
         entityOnGeo = await searchEntity({
             entityId: fromEntityId,
             spaceId: spaceId
@@ -646,7 +1169,9 @@ export async function addSources({
   propertiesSourced,
   source_url,
   source_db_id,
-  toEntity
+  toEntity,
+  entityOnGeo,
+  relations
 }: {
   currentOps: Op[];
   entityId: string;
@@ -655,20 +1180,26 @@ export async function addSources({
   source_url?: string;
   source_db_id?: string;
   toEntity?: string;
+  entityOnGeo: any;
+  relations: any[];
 }): Promise<{
     ops: Op[];
 }> {
     const ops: Array<Op> = [];
     const currSpaceId = GEO_IDS.cryptoSpace;
-    let addOps;
+    let addOps: any;
     
     //Create relation from entity to source
     //Create relation entity that contains properties: source_url (web_url_property), Properties sourced
 
-    const entityOnGeo = await searchEntity({
-        entityId: normalizeToUUID_STRING(entityId),
-        spaceId: currSpaceId
-    });
+    const args = arguments[0];
+    if (!("entityOnGeo" in args)) {
+      console.log("SEARCHING ADD SOURCES")
+      const entityOnGeo = await searchEntity({
+          entityId: normalizeToUUID_STRING(entityId),
+          spaceId: currSpaceId
+      });
+    }
     
 
     addOps = await processNewRelation({
@@ -682,10 +1213,12 @@ export async function addSources({
     ops.push(...addOps.ops);
     const relationEntityId = addOps.relationEntityId
 
-    const relEntityOnGeo = await searchEntity({
-        entityId: relationEntityId,
-        spaceId: currSpaceId
-    });
+    //console.log("SEARCHING relEntityOnGeo")
+    //const relEntityOnGeo = await searchEntity({
+    //    entityId: relationEntityId,
+    //    spaceId: currSpaceId
+    //});
+    const relEntityOnGeo = relations.filter((entity: any) => entity?.id === normalizeToUUID_STRING(relationEntityId))?.[0]
 
     const values = []
     if (source_url) {
@@ -721,19 +1254,22 @@ export async function addSources({
 
 
         if (toEntity) {
-            let propSourcedRelEntityOnGeo = await searchEntity({
-                entityId: addOps.relationEntityId,
-                spaceId: currSpaceId
-            });
-            addOps = await processNewRelation({
-                currenOps: [...ops, ...currentOps],
-                spaceId: currSpaceId,
-                entityOnGeo: propSourcedRelEntityOnGeo,
-                fromEntityId: normalizeToUUID(addOps.relationEntityId),
-                toEntityId: normalizeToUUID(toEntity),
-                propertyId: normalizeToUUID(GEO_IDS.relationsSourced),
-            });
-            ops.push(...addOps.ops);
+          //console.log("propSourcedRelEntityOnGeo")
+          //let propSourcedRelEntityOnGeo = await searchEntity({
+          //    entityId: addOps.relationEntityId,
+          //    spaceId: currSpaceId
+          //});
+
+          let propSourcedRelEntityOnGeo = relations.filter((entity: any) => entity?.id === normalizeToUUID_STRING(addOps.relationEntityId))?.[0]
+          addOps = await processNewRelation({
+              currenOps: [...ops, ...currentOps],
+              spaceId: currSpaceId,
+              entityOnGeo: propSourcedRelEntityOnGeo,
+              fromEntityId: normalizeToUUID(addOps.relationEntityId),
+              toEntityId: normalizeToUUID(toEntity),
+              propertyId: normalizeToUUID(GEO_IDS.relationsSourced),
+          });
+          ops.push(...addOps.ops);
         }
     }
 
@@ -750,3 +1286,29 @@ export const getConcatenatedPlainText = (textArray?: any[]): string | undefined 
       .join("")
       .trim() || undefined;
   };
+
+
+import path from 'path';
+
+export function readAllOpsFromFolder(): any[] {
+  const folderPath = path.join(__dirname, '..', 'ethcc_testnet_ops'); // go up one level
+  const allFiles = fs.readdirSync(folderPath);
+
+  const opsFiles = allFiles.filter(file => /^ethcc_ops_\d+\.txt$/.test(file));
+
+  let allOps: any[] = [];
+
+  for (const file of opsFiles) {
+    const filePath = path.join(folderPath, file);
+    try {
+      const fileContent = fs.readFileSync(filePath, 'utf-8');
+      const ops = JSON.parse(fileContent);
+      allOps.push(...ops);  // Assumes each file contains an array of ops
+      console.log(`Read ${ops.length} ops from ${file}`);
+    } catch (err) {
+      console.error(`Failed to read or parse ${file}:`, err);
+    }
+  }
+
+  return allOps;
+}

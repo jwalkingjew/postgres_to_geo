@@ -1,78 +1,34 @@
 import { PROD_TABLE_IDS } from "./src/teable-meta";
-import { searchEntities, searchEntity, hasBeenEdited, searchOps, normalizeToUUID, propertyToIdMap, relationPropertyExistsOnGeo, valuePropertyExistsOnGeo, processNewRelation, GEO_IDS,  addSpace, addSources } from "./src/constants_v2";
+import { searchEntities, searchEntity, hasBeenEdited, searchOps, normalizeToUUID, propertyToIdMap, relationPropertyExistsOnGeo, valuePropertyExistsOnGeo, processNewRelation, GEO_IDS,  addSpace, addSources, normalizeToUUID_STRING } from "./src/constants_v2";
 
 import { type DataType,  type Op } from "@graphprotocol/grc-20";
 import { Graph, Position, Id, Ipfs, SystemIds } from "@graphprotocol/grc-20";
 import { processTag } from "./ethcc_post_tag";
 import { processProject } from "./ethcc_post_project";
 
-//async function iterateInvestors(currentOps: Array<Op>, teableClient: any, table_id: string, property_value: string, search_property: string, projectEntityId: string, fundraisingRoundEntityId: string): Promise<Op[]> {
-async function iterateInvestors({
-  currentOps,
-  teableClient,
-  table_id,
-  property_value,
-  search_property,
-  projectEntityId,
-  fundraisingRoundEntityId
-}: {
-  currentOps: Array<Op>;
-  teableClient: any;
-  table_id: string;
-  property_value: string;
-  search_property: string;
-  projectEntityId: string;
-  fundraisingRoundEntityId: string;
-}): Promise<{
-    ops: Op[];
-}> {
-    const ops: Array<Op> = [];
-    const currSpaceId = GEO_IDS.cryptoSpace;
-    let addOps;
-    let geoId: string;
-    let filter_obj;
-    const take = 100; // or your preferred page size
-    let skip = 0;
-
-    filter_obj = JSON.parse(`{"conjunction":"and","filterSet":[{"fieldId":"${search_property}","operator":"is","value":"${property_value}"}]}`);
-
-    while (true) {
-        const page = await teableClient.get_records(table_id, filter_obj, take, skip);
-        
-        if (!page || page.length === 0) break;
-
-        for (const record of page) {
-            if (record?.fields?.['investor']) {
-                addOps = await addInvestor({
-                    currentOps: [...ops, ...currentOps],
-                    teableClient: teableClient,
-                    project_geoId: projectEntityId,
-                    page: record,
-                    fundingRoundEntity: fundraisingRoundEntityId,
-                });
-                ops.push(...addOps.ops);
-            }
-        }
-
-        skip += take;
-    }
-
-    return { ops };
-}
-
 //async function addInvestor(currentOps: Array<Op>, teableClient: any, project_geoId: string, page: any, fundingRoundEntity: string): Promise<Op | Op[]> {
 async function addInvestor({
   currentOps,
-  teableClient,
+  client,
   project_geoId,
-  page,
+  investorObs,
   fundingRoundEntity,
+  tables,
+  source_url,
+  projectObs,
+  fundingRoundObs,
+  relations
 }: {
   currentOps: Array<Op>;
-  teableClient: any;
+  client: any;
   project_geoId: string;
-  page: any;
+  investorObs: any;
   fundingRoundEntity: string;
+  source_url: string;
+  projectObs: any;
+  fundingRoundObs: any;
+  relations: any[];
+  tables: { projects: any; investment_rounds: any; tags: any; types: any; assets: any; platforms: any; market_data: any, ecosystems: any; }
 }): Promise<{
     ops: Op[];
 }> {
@@ -88,18 +44,16 @@ async function addInvestor({
     let entityOnGeo;
 
     addOps = await processProject({
+        client: client,
+        tables: tables,
         currentOps: [...ops, ...currentOps],
-        projectId: page?.fields?.['investor']?.id,
-        teableClient: teableClient
+        project: investorObs
     });
     ops.push(...addOps.ops);
     investor_geoId = addOps.id;
 
     // Add investor to funding round entity
-    entityOnGeo = await searchEntity({
-        entityId: fundingRoundEntity,
-        spaceId: currSpaceId
-    });
+    entityOnGeo = fundingRoundObs.geo_entities_found?.[0]
     addOps = await processNewRelation({
         currenOps: [...ops, ...currentOps],
         spaceId: currSpaceId,
@@ -115,18 +69,20 @@ async function addInvestor({
     propertiesSourced.push('investor')
     if (propertiesSourced.length > 0) {
         let source_id = GEO_IDS.coincarp
-        let source_url = page?.fields?.['source'].toString()
+        //let source_url = source_url
 
-        if (page?.fields?.['source'].toString().includes("coincarp.com")) {
+        if (source_url.includes("coincarp.com")) {
             
             addOps = await addSources({
                 currentOps: [...ops, ...currentOps],
                 entityId: fundingRoundEntity,
+                entityOnGeo: fundingRoundObs.geo_entities_found?.[0],
                 sourceEntityId: source_id,
                 propertiesSourced: propertiesSourced.map(property => propertyToIdMap[property]),
                 source_url: source_url,
                 source_db_id: undefined,
-                toEntity: investor_geoId
+                toEntity: investor_geoId,
+                relations: relations,
             })
             ops.push(...addOps.ops);
         }
@@ -134,10 +90,7 @@ async function addInvestor({
     }
     
     // Add investment to investor entity
-    entityOnGeo = await searchEntity({
-        entityId: investor_geoId,
-        spaceId: currSpaceId
-    });
+    entityOnGeo = investorObs.geo_entities_found?.[0]
     addOps = await processNewRelation({
         currenOps: [...ops, ...currentOps],
         spaceId: currSpaceId,
@@ -150,21 +103,18 @@ async function addInvestor({
     let relationEntity = addOps.relationEntityId;
     
     // Add investor type to investor
-    addOps = await processNewRelation({
-        currenOps: [...ops, ...currentOps],
-        spaceId: currSpaceId,
-        entityOnGeo: entityOnGeo,
-        fromEntityId: investor_geoId,
-        toEntityId: normalizeToUUID(GEO_IDS.investorType),
-        propertyId: SystemIds.TYPES_PROPERTY,
-    });
-    ops.push(...addOps.ops);
+    //addOps = await processNewRelation({
+    //    currenOps: [...ops, ...currentOps],
+    //    spaceId: currSpaceId,
+    //    entityOnGeo: entityOnGeo,
+    //    fromEntityId: investor_geoId,
+    //    toEntityId: normalizeToUUID(GEO_IDS.investorType),
+    //    propertyId: SystemIds.TYPES_PROPERTY,
+    //});
+    //ops.push(...addOps.ops);
 
     // Add investors to project entity
-    entityOnGeo = await searchEntity({
-        entityId: project_geoId,
-        spaceId: currSpaceId
-    });
+    entityOnGeo = projectObs.geo_entities_found?.[0]
     addOps = await processNewRelation({
         currenOps: [...ops, ...currentOps],
         spaceId: currSpaceId,
@@ -177,10 +127,12 @@ async function addInvestor({
     ops.push(...addOps.ops);
 
     // add deals to investments relation entity
-    entityOnGeo = await searchEntity({
-        entityId: relationEntity,
-        spaceId: currSpaceId
-    });
+    //console.log("SEARCHING IN INVESTMENTSMENT")
+    //entityOnGeo = await searchEntity({
+    //    entityId: relationEntity,
+    //    spaceId: currSpaceId
+    //});
+    entityOnGeo = relations.filter((entity: any) => entity?.id === normalizeToUUID_STRING(relationEntity))?.[0]
     addOps = await processNewRelation({
         currenOps: [...ops, ...currentOps],
         spaceId: currSpaceId,
@@ -197,16 +149,21 @@ async function addInvestor({
 //export async function processInvestment(currentOps: Array<Op>, investmentId: string, teableClient: any): Promise<[Op | Op[], string]> {
 export async function processInvestment({
   currentOps,
-  investmentId,
-  teableClient,
+  investment,
+  client,
+  tables,
+  relations
 }: {
   currentOps: Array<Op>;
-  investmentId: string;
-  teableClient: any;
+  investment: any;
+  client: any;
+  relations: any[];
+  tables: { projects: any; investment_rounds: any; tags: any; types: any; assets: any; platforms: any; market_data: any, ecosystems: any; }
 }): Promise<{
     ops: Op[]; id: string;
 }> {
 
+    
     // I can significantly speed this up if I sort by fundraising_name and then only run the bulk of this once, then just iterate over the different investors
 
     const ops: Array<Op> = [];
@@ -214,12 +171,8 @@ export async function processInvestment({
     let addOps;
     let geoId: string;
     const propertiesSourced = [];
-    
-    // -------------------
-    // ---- Pull data ---- 
-    // -------------------
-    await new Promise(resolve => setTimeout(resolve, 200));
-    const page = await teableClient.get_record(PROD_TABLE_IDS.InvestmentRounds, investmentId)
+    let searchTrigger = true;
+    let entityOnGeo;
     
     // -----------------------------
     // ---- Organize properties ---- 
@@ -230,58 +183,52 @@ export async function processInvestment({
     const relationProperties = ['funding_round']
     const values: { property: string; value: any }[] = [];
 
-    const name = page?.fields?.['fundraising_name']
+    const name = investment?.['fundraising_name']
 
     if (geoId = await searchOps({
-            ops: currentOps,
-            property: SystemIds.NAME_PROPERTY,
-            propType: "TEXT",
-            searchText: name,
-            typeId: normalizeToUUID(GEO_IDS.fundingRoundType)
-        })) { 
+        ops: currentOps,
+        property: SystemIds.NAME_PROPERTY,
+        propType: "TEXT",
+        searchText: name,
+        typeId: normalizeToUUID(GEO_IDS.fundingRoundType)
+    })) {
         return { ops: (await addSpace(ops, currSpaceId)), id: geoId }
     } else {
-        geoId = await searchEntities({
-            spaceId: currSpaceId,
-            property: SystemIds.NAME_PROPERTY,
-            searchText: name,
-            typeId: normalizeToUUID(GEO_IDS.fundingRoundType),
-        });
-
-        let entityOnGeo;
-        if (!geoId) {
-            geoId = Id.generate();
+        if (investment.geo_ids_found.length > 0) {
+            geoId = investment.geo_ids_found?.[0]
         } else {
-            entityOnGeo = await searchEntity({
-                entityId: geoId,
-                spaceId: currSpaceId
-            });
-            console.log("entity exists on geo: ", geoId)
+            geoId = Id.generate();
+            searchTrigger = false;
         }
 
         if (await hasBeenEdited(currentOps, geoId)) {
             return { ops: ops, id: geoId }
         } else {
+            if (searchTrigger) {
+                entityOnGeo = investment.geo_entities_found?.[0]
+                console.log("entity exists on geo: ", geoId)
+            }
+
             for (const property of valueProperties) {
                 let start_val_len = values.length;
                 
-                const value = page?.fields?.[property];
+                const value = investment?.[property];
                 const includesCoincarp = typeof value === 'string' && value.toLowerCase().includes('coincarp.com');
-                if ((property == "website_url") && (includesCoincarp)) {
+                if ((property.includes('url')) && (includesCoincarp)) {
                     console.error("website incldudes coincarp.com")
                 } else {
                     // Only push property if it doesnt already exist on Geo
                     if (!(await valuePropertyExistsOnGeo(currSpaceId, entityOnGeo, propertyToIdMap[property]))) {
                         
-                        if (page?.fields?.[property]) {
+                        if (investment?.[property]) {
                             let value;
                             if (property == "round_date") {
-                                const date = new Date(page?.fields?.[property]?.toString());
+                                const date = new Date(investment?.[property]?.toString());
                                 // Set to midnight UTC
                                 date.setUTCHours(0, 0, 0, 0);
                                 value =  date.toISOString();
                             } else {
-                                value = page?.fields?.[property].toString()
+                                value = investment?.[property].toString()
                             }
 
                             values.push({
@@ -305,17 +252,19 @@ export async function processInvestment({
 
                 if (propertiesSourced.length > 0) {
                     let source_id = GEO_IDS.coincarp
-                    let source_url = page?.fields?.['source'].toString()
+                    let source_url = investment?.['source'].toString()
 
-                    if (page?.fields?.['source'].toString().includes("coincarp.com")) {
+                    if (investment?.['source'].toString().includes("coincarp.com")) {
                         addOps = await addSources({
                             currentOps: [...ops, ...currentOps],
                             entityId: geoId,
+                            entityOnGeo: investment.geo_entities_found?.[0],
                             sourceEntityId: source_id,
                             propertiesSourced: propertiesSourced.map(property => propertyToIdMap[property]),
                             source_url: source_url,
                             source_db_id: undefined,
                             toEntity: undefined,
+                            relations: relations,
                         })
                         ops.push(...addOps.ops);
                         
@@ -324,7 +273,7 @@ export async function processInvestment({
                 }
             }
 
-            //Add project type...
+            //Add Funding round type...
             addOps = await processNewRelation({
                 currenOps: [...ops, ...currentOps],
                 spaceId: currSpaceId,
@@ -338,12 +287,14 @@ export async function processInvestment({
             let toEntity;
             let projectEntityId;
             for (const property of relationProperties) {
-                if (page?.fields?.[property]) {
+                if (investment?.[property]) {
                     if (property == 'funding_round') {
                         addOps = await processTag({
                             currentOps: [...ops, ...currentOps],
-                            tagName: page?.fields?.[property],
-                            tagType: GEO_IDS.fundingStageType
+                            tag: investment,
+                            tagName: investment?.[property],
+                            tagType: GEO_IDS.fundingStageType,
+                            tables: tables
                         });
                     
                         ops.push(...addOps.ops);
@@ -363,17 +314,19 @@ export async function processInvestment({
                         propertiesSourced.push(property)
                         if (propertiesSourced.length > 0) {
                             let source_id = GEO_IDS.coincarp
-                            let source_url = page?.fields?.['source'].toString()
+                            let source_url = investment?.['source'].toString()
 
-                            if (page?.fields?.['source'].toString().includes("coincarp.com")) {
+                            if (investment?.['source'].toString().includes("coincarp.com")) {
                                 addOps = await addSources({
                                     currentOps: [...ops, ...currentOps],
                                     entityId: geoId,
+                                    entityOnGeo: investment.geo_entities_found?.[0],
                                     sourceEntityId: source_id,
                                     propertiesSourced: propertiesSourced.map(property => propertyToIdMap[property]),
                                     source_url: source_url,
                                     source_db_id: undefined,
                                     toEntity: toEntity,
+                                    relations: relations,
                                 })
                                 ops.push(...addOps.ops);
                                 
@@ -385,13 +338,15 @@ export async function processInvestment({
             }
 
             //Handle either an array of projects or single project
-            const rawProjects = page?.fields?.['project'];
+            const rawProjects = investment?.['projects'];
             const projectList = Array.isArray(rawProjects) ? rawProjects : rawProjects ? [rawProjects] : [];
             for (const project of projectList) {
+                const projectObs = tables?.projects.filter((item: any) => item?.__id === project.id)?.[0];
                 addOps = await processProject({
                     currentOps: [...ops, ...currentOps],
-                    projectId: project?.id,
-                    teableClient: teableClient
+                    project: projectObs,
+                    client: client,
+                    tables: tables
                 });
                 ops.push(...addOps.ops)
 
@@ -412,17 +367,19 @@ export async function processInvestment({
                 propertiesSourced.push('project')
                 if (propertiesSourced.length > 0) {
                     let source_id = GEO_IDS.coincarp
-                    let source_url = page?.fields?.['source'].toString()
+                    let source_url = investment?.['source'].toString()
 
-                    if (page?.fields?.['source'].toString().includes("coincarp.com")) {
+                    if (investment?.['source'].toString().includes("coincarp.com")) {
                         addOps = await addSources({
                             currentOps: [...ops, ...currentOps],
                             entityId: geoId,
+                            entityOnGeo: investment.geo_entities_found?.[0],
                             sourceEntityId: source_id,
                             propertiesSourced: propertiesSourced.map(property => propertyToIdMap[property]),
                             source_url: source_url,
                             source_db_id: undefined,
-                            toEntity: toEntity
+                            toEntity: toEntity,
+                            relations: relations,
                         })
                         ops.push(...addOps.ops);
                     }
@@ -430,18 +387,23 @@ export async function processInvestment({
                 }
 
                 // Add investors
-                let searchProperty = "fundraising_name"
-
-                addOps = await iterateInvestors({
-                    currentOps: ops,
-                    teableClient: teableClient,
-                    table_id: PROD_TABLE_IDS.InvestmentRounds,
-                    property_value: page?.fields?.[searchProperty].toString(),
-                    search_property: searchProperty,
-                    projectEntityId: projectEntityId,
-                    fundraisingRoundEntityId: geoId,
-                });
-                ops.push(...addOps.ops)
+                const rawInvestors = investment?.['investors'];
+                const investorList = Array.isArray(rawInvestors) ? rawInvestors : rawInvestors ? [rawInvestors] : [];
+                for (const investor of investorList) {
+                    addOps = await addInvestor({
+                        currentOps: [...ops, ...currentOps],
+                        client: client,
+                        project_geoId: projectEntityId,
+                        projectObs: projectObs,
+                        investorObs: tables?.projects.filter((item: any) => item?.__id === investor?.id)?.[0],
+                        fundingRoundEntity: geoId,
+                        fundingRoundObs: investment,
+                        tables: tables,
+                        source_url: investment?.['source'].toString(),
+                        relations: relations
+                    });
+                    ops.push(...addOps.ops)
+                }
             }
 
             return { ops: (await addSpace(ops, currSpaceId)), id: geoId }

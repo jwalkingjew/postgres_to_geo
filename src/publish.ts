@@ -24,7 +24,7 @@ export async function publish(options: PublishOptions, network: string) {
 		ops: options.ops,
 	});
 
-	console.log(cid)
+	console.log("CID: ", cid)
 
 	// This returns the correct contract address and calldata depending on the space id
 	// Make sure you use the correct space id in the URL below and the correct network.
@@ -39,7 +39,6 @@ export async function publish(options: PublishOptions, network: string) {
 		}),
 	});
 
-	console.log(result)
 	const { to, data } = await result.json();
 
 	if (network == "TESTNET") {

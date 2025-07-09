@@ -8,6 +8,8 @@ import * as dotenv from "dotenv";
 
 dotenv.config();
 
+export const DB_ID = "bseocOYqflQMDdju75d";
+
 interface PostgreSQLConfig {
   user: string;
   password: string;
@@ -21,6 +23,12 @@ export const TABLES = {
   TAGS: "tags",
   TYPES: "types",
   INVESTMENT_ROUNDS: "investment_rounds",
+  PLATFORMS: "platforms",
+  MARKET_DATA: "market_data",
+  ASSETS: "assets2",
+  ECOSYSTEMS: "ecosystems",
+  DAPPS: "dapps",
+  DAPP_MARKET_DATA: "dapp_market_data"
 } as const;
 
 const validateEnvironmentVariables = (): PostgreSQLConfig => {

@@ -1,0 +1,28 @@
+[
+  {
+    "type": "UNSET_ENTITY_VALUES",
+    "unsetEntityValues": {
+      "id": "9959eb50-b029-4a15-8557-b39318cbb91b",
+      "properties": [
+        "a126ca53-0c8e-48d5-b888-82c734c38935"
+      ]
+    },
+    "spaceId": "2df11968-9d1c-489f-91b7-bdc88b472161"
+  },
+  {
+    "type": "DELETE_RELATION",
+    "id": "6dbddba2-6e37-4e40-b8a0-2621f6a73dfd",
+    "spaceId": "2df11968-9d1c-489f-91b7-bdc88b472161"
+  },
+  {
+    "type": "CREATE_RELATION",
+    "relation": {
+      "id": "2186d9b9-c567-4fe8-a33c-93f59148eb94",
+      "entity": "db72a91f-93a0-4c61-b8e6-86c825311adb",
+      "fromEntity": "9959eb50-b029-4a15-8557-b39318cbb91b",
+      "toEntity": "37d2167f-b64a-4b68-be26-55b3608050e7",
+      "type": "8f151ba4-de20-4e3c-9cb4-99ddf96f48f1"
+    },
+    "spaceId": "2df11968-9d1c-489f-91b7-bdc88b472161"
+  }
+]

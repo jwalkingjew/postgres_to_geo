@@ -5,71 +5,18 @@ import { type DataType,  type Op } from "@graphprotocol/grc-20";
 import { Graph, Position, Id, Ipfs, SystemIds } from "@graphprotocol/grc-20";
 import { processTag } from "./ethcc_post_tag";
 
-async function addProjTags({
-  currentOps,
-  teableClient,
-  page,
-  tagProperties,
-  projectEntityId,
-  entityOnGeo,
-}: {
-  currentOps: Array<Op>;
-  teableClient: any;
-  page: any;
-  tagProperties: string[];
-  projectEntityId: string;
-  entityOnGeo: any;
-}): Promise<{
-    ops: Op[];
-}> {
-    const ops: Array<Op> = [];
-    const currSpaceId = GEO_IDS.cryptoSpace;
-    let addOps;
-    let geoId = projectEntityId;
-    let toEntity;
-    const propertiesSourced: string[] = [];
-
-
-    
-
-    for (const property of tagProperties) {
-        const tagEntries = page?.fields?.[property];
-        const tagList = Array.isArray(tagEntries) ? tagEntries : tagEntries ? [tagEntries] : [];
-        for (const tag of tagList) {
-            const tagPage = await teableClient.get_record(PROD_TABLE_IDS.Tags, tag.id)
-            addOps = await processTag({
-                currentOps: [...ops, ...currentOps],
-                tagName: tagPage?.fields?.['name'],
-                tagType: propertyToTypeIdMap[property]
-            });
-            ops.push(...addOps.ops)
-            toEntity = addOps.id
-
-            addOps = await processNewRelation({
-                currenOps: [...ops, ...currentOps],
-                spaceId: currSpaceId,
-                entityOnGeo: entityOnGeo,
-                fromEntityId: geoId,
-                toEntityId: toEntity,
-                propertyId: propertyToIdMap[property],
-            });
-            ops.push(...addOps.ops);
-            //TODO - ADD SOURCING
-        }
-    }
-    return { ops: (await addSpace(ops, currSpaceId)) }
-}
-
 
 //export async function processProject(currentOps: Array<Op>, projectId: string, teableClient: any): Promise<[Op | Op[], string]> {
 export async function processProject({
   currentOps,
-  projectId,
-  teableClient,
+  project,
+  client,
+  tables
 }: {
   currentOps: Array<Op>;
-  projectId: string;
-  teableClient: any;
+  project: any;
+  client: any;
+  tables: { projects: any; investment_rounds: any; tags: any; types: any; assets: any; platforms: any; market_data: any, ecosystems: any; }
 }): Promise<{
     ops: Op[]; id: string;
 }> {
@@ -77,49 +24,47 @@ export async function processProject({
     const currSpaceId = GEO_IDS.cryptoSpace;
     let addOps;
     let geoId: string;
-    
-    // -------------------
-    // ---- Pull data ---- 
-    // -------------------
-    //console.log("PROJECT ID: ", projectId)
-    await new Promise(resolve => setTimeout(resolve, 200));
-    const page = await teableClient.get_record(PROD_TABLE_IDS.Projects, projectId)
+    let searchTrigger = true;
+    let entityOnGeo;
     
     // -----------------------------
     // ---- Organize properties ---- 
     // -----------------------------
     // fields to pull from postgres
 
-    const valueProperties = ['name', 'description', 'website_url', 'x_url', 'date_founded', 'linkedin_url'];
-    const relationProperties = ['cover', 'logo', 'project_type']
+    const valueProperties = ['name', 'description', 'website_url', 'x_url', 'date_founded', 'linkedin_url', 'medium_url', 'telegram_url', 'discord_url'];
+    const imageProperties = ['cover', 'logo']
+    const relationProperties = ['related_assets']
+    //const relationProperties = ['related_industries', 'related_asset_categories', 'related_technologies', 'related_services_or_products', 'tags', 'related_platforms', 'related_assets', 'related_ecosystems']
+    
+    
     const values: { property: string; value: any }[] = [];
+    const name = project?.name;
+    const project_type = project?.project_type;
 
-    const name = page?.fields?.['name']
+    let typeId;
+    if (project_type == "Angel Investor") {
+        typeId = SystemIds.PERSON_TYPE
+    } else {
+        typeId = SystemIds.PROJECT_TYPE
+    }
+    console.log("PROJECT NAME: ", name);
 
+    // Search ops to make sure this project has not already been processed
     if (geoId = await searchOps({
             ops: currentOps,
             property: SystemIds.NAME_PROPERTY,
             propType: "TEXT",
             searchText: name,
-            typeId: SystemIds.PROJECT_TYPE
+            typeId: typeId
         })) { 
         return { ops: ops, id: geoId }
-    } else {
-        geoId = await searchEntities({
-            spaceId: currSpaceId,
-            property: SystemIds.NAME_PROPERTY,
-            searchText: name,
-            typeId: SystemIds.PROJECT_TYPE,
-        });
-        let entityOnGeo;
-        if (!geoId) {
-            geoId = Id.generate();
+    } else { // Search geo to see if this project exists on Geo
+        if (project.geo_ids_found.length > 0) {
+            geoId = project.geo_ids_found?.[0]
         } else {
-            entityOnGeo = await searchEntity({
-                entityId: geoId,
-                spaceId: currSpaceId
-            });
-            console.log("entity exists on geo: ", geoId)
+            geoId = Id.generate();
+            searchTrigger = false;
         }
 
         //Limit publishing to only if includes some set of property values
@@ -127,26 +72,32 @@ export async function processProject({
         //    return [ops, null]
         //}
 
-        if (await hasBeenEdited(currentOps, geoId)) {
+        if (await hasBeenEdited(currentOps, geoId)) { // Exit function if this has been edited before
             return { ops: ops, id: geoId }
         } else {
+            if (searchTrigger) {
+                entityOnGeo = project.geo_entities_found?.[0]
+                console.log("entity exists on geo: ", geoId)
+                //console.log(entityOnGeo)
+            }
+            
             for (const property of valueProperties) {
-                const value = page?.fields?.[property];
+                const value = project?.[property];
                 const includesCoincarp = typeof value === 'string' && value.toLowerCase().includes('coincarp.com');
-                if ((property == "website_url") && (includesCoincarp)) {
-                    console.error("website incldudes coincarp.com")
+                if ((property.includes('url')) && (includesCoincarp)) {
+                    console.error(`${property} includes coincarp.com`)
                 } else {
                     // Only push property if it doesnt already exist on Geo
-                    if (!(await valuePropertyExistsOnGeo(currSpaceId, entityOnGeo, propertyToIdMap[property]))) {
-                        if (page?.fields?.[property]) {
+                    if (!(valuePropertyExistsOnGeo(currSpaceId, entityOnGeo, propertyToIdMap[property]))) {
+                        if (project?.[property]) {
                             let value;
                             if (property == "date_founded") {
-                                const date = new Date(page?.fields?.[property].toString());
+                                const date = new Date(project?.[property].toString());
                                 // Set to midnight UTC
                                 date.setUTCHours(0, 0, 0, 0);
                                 value =  date.toISOString();
                             } else {
-                                value = page?.fields?.[property].toString()
+                                value = project?.[property].toString()
                             }
                             values.push({
                                 property: normalizeToUUID(propertyToIdMap[property]),
@@ -156,6 +107,7 @@ export async function processProject({
                     }
                 }
             }
+            // Create entity with values
             if (values.length > 0) {
                 addOps = Graph.createEntity({
                     id: geoId,
@@ -163,30 +115,59 @@ export async function processProject({
                 })
                 ops.push(...addOps.ops);
             }
-
+            
             //Add project type...
             addOps = await processNewRelation({
                 currenOps: [...ops, ...currentOps],
                 spaceId: currSpaceId,
                 entityOnGeo: entityOnGeo,
                 fromEntityId: geoId,
-                toEntityId: GEO_IDS.project_type_id,
+                toEntityId: typeId,
                 propertyId: SystemIds.TYPES_PROPERTY,
             });
             ops.push(...addOps.ops);
 
+            if (project_type == "Fund") {
+                //Add project type...
+                addOps = await processNewRelation({
+                    currenOps: [...ops, ...currentOps],
+                    spaceId: currSpaceId,
+                    entityOnGeo: entityOnGeo,
+                    fromEntityId: geoId,
+                    toEntityId: GEO_IDS.investorType,
+                    propertyId: SystemIds.TYPES_PROPERTY,
+                });
+                ops.push(...addOps.ops);
+            }
+
+            if (project.top_project) {
+                //Add project type...
+                addOps = await processNewRelation({
+                    currenOps: [...ops, ...currentOps],
+                    spaceId: currSpaceId,
+                    entityOnGeo: entityOnGeo,
+                    fromEntityId: geoId,
+                    toEntityId: "0f3e0e21-1636-435a-850f-6f57d616e28e",
+                    propertyId: normalizeToUUID(GEO_IDS.tagsPropertyId),
+                });
+                ops.push(...addOps.ops);
+            }
+
             //Write cover ops
-            const imageProperties = ['cover', 'logo'];
+            imageProperties.length = 0
             for (const imageProp of imageProperties) {
-                if (page?.fields?.[imageProp]) {
-                    if (!(await relationPropertyExistsOnGeo(currSpaceId, entityOnGeo, propertyToIdMap[imageProp]))) {
+                if (project?.[imageProp]) {
+                    if (!(relationPropertyExistsOnGeo(currSpaceId, entityOnGeo, propertyToIdMap[imageProp]))) {
+                        console.log("IMAGE GEN")
                         // create an image
-                        //const { id: imageId, ops: createImageOps } = await Graph.createImage({
-                        //    url: page?.fields?.[imageProp],
-                        //});
-                        //ops.push(...createImageOps)
-                        console.log(`${imageProp} IMAGE NOT CREATED PROPERLY FOR `, geoId);
-                        const imageId = Id.generate()
+                        const { id: imageId, ops: createImageOps } = await Graph.createImage({
+                            url: project?.[imageProp],
+                        });
+                        ops.push(...createImageOps)
+                        //console.log(project?.[imageProp])
+                        //console.log(imageId)
+                        //console.log(`${imageProp} IMAGE NOT CREATED PROPERLY FOR `, geoId);
+                        //const imageId = Id.generate()
 
                         addOps = await processNewRelation({
                             currenOps: [...ops, ...currentOps],
@@ -201,9 +182,56 @@ export async function processProject({
                 }
             }
 
-            //const tagProperties = ['related_industries', 'related_services_or_products', 'related_asset_categories', 'related_technologies', 'tags']
-            //addOps = await addProjTags([...ops, ...currentOps], teableClient, page, tagProperties, geoId, entityOnGeo)
-            //ops.push(...addOps.ops);
+            //Need custom functions for networks and assets
+            // relationProperties: ['related_industries', 'related_asset_categories', 'related_technologies', 'related_services_or_products', 'tags', 'related_platforms', 'related_assets']
+            for (const relationProperty of relationProperties) {
+                if (project?.[relationProperty]) {
+                    const rawProp = project?.[relationProperty];
+                    const propValueList = Array.isArray(rawProp) ? rawProp : rawProp ? [rawProp] : [];
+                    for (const propValue of propValueList) {
+                        // Need to properly process this entity and get its geoId back
+
+                        
+                        let tagObs;
+                        if (relationProperty == 'related_platforms') {
+                            tagObs = tables?.platforms.filter((item: any) => item?.__id === propValue.id);
+                            //console.log("Project Name for platforms: ", name)
+                            //console.log("Platforms PROPVALUE: ", propValue)
+                        } else if (relationProperty == 'related_assets') {
+                            tagObs = tables?.assets.filter((item: any) => item?.__id === propValue.id);
+                            //console.log("Project Name for assets: ", name)
+                            //console.log("assets tagObs: ", tagObs)
+                        } else if (relationProperty == 'related_ecosystems') {
+                            tagObs = tables?.ecosystems.filter((item: any) => item?.__id === propValue.id);
+                            //console.log("Project Name for ecosystems: ", name)
+                            //console.log("assets tagObs: ", tagObs)
+                        } else {
+                            tagObs = tables?.tags.filter((item: any) => item?.__id === propValue.id);
+                            //console.log("Project Name for tags: ", name)
+                            //console.log("PROPVALUE: ", propValue)
+                        }
+
+                        addOps = await processTag({
+                            currentOps: [...ops, ...currentOps],
+                            tag: tagObs?.[0],
+                            tagType: propertyToTypeIdMap[relationProperty],
+                            tables: tables
+                        });
+                        ops.push(...addOps.ops);
+
+                        addOps = await processNewRelation({
+                            currenOps: [...ops, ...currentOps],
+                            spaceId: currSpaceId,
+                            entityOnGeo: entityOnGeo,
+                            fromEntityId: geoId,
+                            toEntityId: addOps.id,
+                            propertyId: propertyToIdMap[relationProperty],
+                        });
+                        ops.push(...addOps.ops);
+                        
+                    }
+                }
+            }
 
             return { ops: (await addSpace(ops, currSpaceId)), id: geoId }
         }
