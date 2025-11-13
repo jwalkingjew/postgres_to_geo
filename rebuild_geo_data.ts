@@ -4,15 +4,15 @@
 import { TeableClient } from "./src/teable-client";
 import { PROD_TABLE_IDS } from "./src/teable-meta";
 import { testnetWalletAddress, getSpaces, searchEntity, filterOps, normalizeToUUID, normalizeToUUID_STRING, propertyToIdMap, GEO_IDS, readAllOpsFromFolder, searchEntities, propertyToTypeIdMap, searchEntities_byId } from "./src/constants_v2";
-import { processInvestment } from "./ethcc_post_investment";
-import { processProject } from "./ethcc_post_project";
+import { processInvestment } from "./junk/ethcc_post_investment";
+import { processProject } from "./junk/ethcc_post_project";
 import * as fs from "fs";
 import { publish } from "./src/publish";
 import { SystemIds, type Op } from "@graphprotocol/grc-20";
 import PostgreSQLClient, { TABLES, DB_ID } from "./src/postgres-client";
 import path from 'path';
-import { processApp } from "./ethcc_post_dapp";
-import { processApp_optimized } from "./ethcc_process_dapp_optimized";
+import { processApp } from "./junk/ethcc_post_dapp";
+import { processApp_optimized } from "./junk/ethcc_process_dapp_optimized";
 
 //Currently created projects that have project_type "Angel investor" should remove type "Project" and add type "Person"
 

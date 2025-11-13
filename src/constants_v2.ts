@@ -1,28 +1,23 @@
 //Import necessary libraries
-import { Client } from 'pg';
-
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from "fs";
-import md5 from 'crypto-js/md5';
-import {Id, Base58, SystemIds, Graph, Position, type Op} from "@graphprotocol/grc-20";
-
+import md5 from 'crypto-js/md5.js';
+import {Id, Base58, SystemIds, Graph, Position, type Op, IdUtils} from "@graphprotocol/grc-20";
+import dotenv from "dotenv";
 import { validate as uuidValidate } from 'uuid';
 
-const mainnet_query_url = "https://hypergraph.up.railway.app/graphql";
-//const testnet_query_url = "https://geo-conduit.up.railway.app/graphql";
-const testnet_query_url = "https://hypergraph-v2-testnet.up.railway.app/graphql"
-const QUERY_URL = testnet_query_url;
 
-
-export const testnetWalletAddress = "0x84713663033dC5ba5699280728545df11e76BCC1";
-export const mainnetWalletAddress = "0x0A77FD6b13d135426c25E605a6A4F39AF72fD967";
+export const testnetWalletAddress = process.env.W_ADDRESS;
+export const mainnetWalletAddress = process.env.SW_ADDRESS;
 
 export const GEO_IDS = {
   coincarp: "2wrGpfxCX3sEL3gjUhG6or",
 
   appType: "JNCkB5MTz1gmQVHP8BLirw",
+  podchaserEntity: "edd1ef73-ec81-4c5f-a17b-749d95699f48",
 
-  rootSpace: "2df11968-9d1c-489f-91b7-bdc88b472161",
+  podcastsSpace: "530a70d9-d5ee-410a-850a-cf70e4be2ee5",
+  rootSpace: "29c97d29-1c9a-41f1-a466-8a713764bc27",
   cryptoSpace: "b2565802-3118-47be-91f2-e59170735bac",
   cryptoEventsSpace: "dabe3133-4334-47a0-85c5-f965a3a94d4c",
   regionsSpace: "aea9f05a-2797-4e7e-aeae-5059ada3b56b",
@@ -130,8 +125,8 @@ export async function searchOps({
             Array.isArray(op.entity?.values) &&
             op.entity.values.some(
                 (v: { property: string; value: string }) =>
-                v.property === normalizeToUUID_STRING(property) &&
-                normalizeUrl(v.value) === normalizeUrl(searchText)
+                v.property == normalizeToUUID_STRING(property) &&
+                normalizeUrl(v.value) == normalizeUrl(searchText)
             )
         );
     } else {
@@ -140,8 +135,8 @@ export async function searchOps({
             Array.isArray(op.entity?.values) &&
             op.entity.values.some(
                 (v: { property: string; value: string }) =>
-                v.property === normalizeToUUID_STRING(property) &&
-                v.value?.toLowerCase() === searchText?.toLowerCase()
+                v.property == normalizeToUUID_STRING(property) &&
+                String(v.value)?.toLowerCase() == searchText?.toLowerCase()
             )
         );
     }
@@ -151,10 +146,10 @@ export async function searchOps({
     if (match) {
         if (typeId) {
             const matchType = ops.find(op =>
-                op.type === "CREATE_RELATION" &&
-                op.relation.fromEntity === match?.entity?.id &&
-                op.relation.type === SystemIds.TYPES_PROPERTY &&
-                op.relation.toEntity === normalizeToUUID_STRING(typeId)
+                op.type == "CREATE_RELATION" &&
+                op.relation.fromEntity == match?.entity?.id &&
+                op.relation.type == SystemIds.TYPES_PROPERTY &&
+                op.relation.toEntity == normalizeToUUID_STRING(typeId)
             );
             if (matchType) {
                 //console.log("Match found", match.entity.id)
@@ -195,498 +190,7 @@ export async function hasBeenEdited(ops: Array<Op>, entityId: string): Promise<b
     }
 }
 
-
-async function fetchWithRetry(query: string, variables: any, retries = 3, delay = 200) {
-    //console.log("FETCHING...")
-    for (let i = 0; i < retries; i++) {
-        const response = await fetch(QUERY_URL, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ query, variables }),
-        });
-
-        if (response.ok) {
-           //console.log("DONE FETCHING")
-            return await response.json();
-        }
-
-        if (i < retries - 1) {
-            // Optional: only retry on certain error statuses
-            console.log("Retry #", i)
-            if (response.status === 502 || response.status === 503 || response.status === 504) {
-                await new Promise(resolve => setTimeout(resolve, delay * (2 ** i))); // exponential backoff
-            } else {
-                break; // for other errors, don’t retry
-            }
-        } else {
-            console.log("searchEntities");
-            console.log(`SPACE: ${variables.space}; PROPERTY: ${variables.property}; searchText: ${variables.searchText}; typeId: ${variables.typeId}`);
-            throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-    }
-}
-
-async function fetchWithRetry_new(query: string, variables: any, retries = 3, delay = 200) {
-    //console.log("FETCHING...")
-    for (let i = 0; i < retries; i++) {
-        const response = await fetch("https://v2-postgraphile.up.railway.app/graphiql", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ query, variables }),
-        });
-
-        if (response.ok) {
-           //console.log("DONE FETCHING")
-            return await response.json();
-        }
-
-        if (i < retries - 1) {
-            // Optional: only retry on certain error statuses
-            console.log("Retry #", i)
-            if (response.status === 502 || response.status === 503 || response.status === 504) {
-                await new Promise(resolve => setTimeout(resolve, delay * (2 ** i))); // exponential backoff
-            } else {
-                break; // for other errors, don’t retry
-            }
-        } else {
-            console.log("searchEntities");
-            console.log(`SPACE: ${variables.space}; PROPERTY: ${variables.property}; searchText: ${variables.searchText}; typeId: ${variables.typeId}`);
-            throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-    }
-}
-
-//export async function searchEntities(space: string | undefined, property: string, searchText: string, typeId: string | null = null) {
-export async function searchEntities_orig({
-  spaceId,
-  property,
-  searchText,
-  typeId,
-  notTypeId
-}: {
-  spaceId?: string;
-  property: string;
-  searchText?: string;
-  typeId?: string;
-  notTypeId?: string;
-}) {
-  if (!searchText) {
-    return null;
-  }
-  await new Promise(resolve => setTimeout(resolve, 200));
-
-  const query = `
-    query GetEntities(
-      ${spaceId ? '$spaceId: String!' : ''}
-      $property: String!
-      $searchText: String!
-      ${typeId ? '$typeId: String!' : ''}
-      ${typeId ? '$typesPropertyId: String!' : ''}
-      ${notTypeId ? '$notTypeId: String!' : ''}
-      ${notTypeId ? '$typesPropertyId: String!' : ''}
-    ) {
-      entities(
-        ${spaceId ? 'spaceId: $spaceId,' : ''}
-        filter: {
-          value: {
-            property: $property,
-            text: { is: $searchText }
-          }
-          ${typeId ? `relations: { typeId: $typesPropertyId, toEntityId: $typeId }` : ''}
-          ${notTypeId ? `not: { relations: { typeId: $typesPropertyId, toEntityId: $notTypeId } }` : ''}
-        }
-      ) {
-        id
-        name
-      }
-    }
-  `;
-
-  const variables: Record<string, any> = {
-    property: normalizeToUUID_STRING(property),
-    searchText: cleanText(searchText),
-    ...(spaceId && { spaceId: normalizeToUUID_STRING(spaceId) }),
-    ...(typeId && {
-      typeId: normalizeToUUID_STRING(typeId),
-      typesPropertyId: SystemIds.TYPES_PROPERTY
-    }),
-    ...(notTypeId && {
-      notTypeId: normalizeToUUID_STRING(notTypeId),
-      typesPropertyId: SystemIds.TYPES_PROPERTY
-    })
-  };
-
-  const data = await fetchWithRetry(query, variables);
-
-  const entities = data?.data?.entities;
-
-  if (entities?.length === 1) {
-    return entities[0]?.id;
-  } else if (entities?.length > 1) {
-    console.error("DUPLICATE ENTITIES FOUND...");
-    console.log(entities);
-    return entities[0]?.id;
-  }
-
-  return null;
-}
-
-export async function searchEntities_new({
-  spaceId,
-  property,
-  searchText,
-  typeId,
-  notTypeId
-}: {
-  spaceId?: string;
-  property?: string;
-  searchText?: string | string[];
-  typeId?: string;
-  notTypeId?: string;
-}) {
-
-  await new Promise(resolve => setTimeout(resolve, 200));
-
-  const isArray = Array.isArray(searchText);
-  const normalizedProperty = property ? normalizeToUUID_STRING(property) : undefined;
-  const normalizedSpaceId = spaceId ? normalizeToUUID_STRING(spaceId) : undefined;
-
-  console.log("HERE")
-  const query = `
-    query GetEntities(
-      ${normalizedSpaceId ? `$spaceId: String!` : ``}
-      ${typeId ? '$typesPropertyId: String!' : ''}
-      ${typeId ? `$typeId: String!` : ``}
-    ) {
-      entities(
-        filter: {
-          ${normalizedSpaceId ? `spaceIds: { in: [$spaceId] },` : ``}
-          ${typeId ? `
-          relations: {
-            some: {
-              toEntityId: { is: $typeId }
-              typeId: { is: $typesPropertyId }
-            }
-          }` : ``}
-        }
-      ) {
-        id
-        name
-        values {
-          nodes {
-            spaceId
-            propertyId
-            value
-          }
-        }
-        relations {
-          nodes {
-            id
-            spaceId
-            fromEntityId
-            toEntityId
-            typeId
-            entityId
-            position
-          }
-        }
-      }
-    }
-  `;
-
-  const variables: Record<string, any> = {
-    propertyId: normalizedProperty,
-    ...(normalizedSpaceId ? { spaceId: normalizedSpaceId } : {}),
-    ...(typeId ? { typeId: normalizeToUUID_STRING(typeId) } : {}),
-    ...(typeId ? { typesPropertyId: SystemIds.TYPES_PROPERTY } : {}),
-  };
-
-  console.log(query)
-
-  console.log(variables.propertyId)
-  console.log(variables.spaceId)
-
-  const data = await fetchWithRetry_new(query, variables);
-  console.log(data)
-  const entities = data?.data?.entities;
-
-  if (isArray) return entities;
-
-  if (entities?.length === 1) {
-    return entities[0]?.id;
-  } else if (entities?.length > 1) {
-    console.error("DUPLICATE ENTITIES FOUND...");
-    console.log(entities);
-    return entities[0]?.id;
-  }
-
-  return null;
-}
-
-export async function searchEntities({
-  spaceId,
-  property,
-  searchText,
-  typeId,
-  notTypeId
-}: {
-  spaceId?: string;
-  property: string;
-  searchText?: string | string[];
-  typeId?: string;
-  notTypeId?: string;
-}) {
-  if (!searchText || (Array.isArray(searchText) && searchText.length === 0)) {
-    return null;
-  }
-  await new Promise(resolve => setTimeout(resolve, 200));
-
-  const isArray = Array.isArray(searchText);
-  const normalizedProperty = normalizeToUUID_STRING(property);
-
-  // GraphQL variables section
-  const query = `
-    query GetEntities(
-      ${spaceId ? '$spaceId: String!' : ''}
-      ${searchText ? '$orFilters: [EntityFilter!]' : '' }
-      ${typeId ? '$typeId: String!' : ''}
-      ${typeId || notTypeId ? '$typesPropertyId: String!' : ''}
-      ${notTypeId ? '$notTypeId: String!' : ''}
-    ) {
-      entities(
-        ${spaceId ? 'spaceId: $spaceId,' : ''}
-        filter: {
-          ${searchText ? 'or: $orFilters' : '' }
-          ${typeId ? `relations: { typeId: $typesPropertyId, toEntityId: $typeId }` : ''}
-          ${notTypeId ? `not: { relations: { typeId: $typesPropertyId, toEntityId: $notTypeId } }` : ''}
-        }
-      ) {
-        id
-        name
-        ${isArray || !searchText ? `
-        values {
-          spaceId
-          propertyId
-          value
-        }
-        relations {
-          id
-          spaceId
-          fromId
-          toId
-          typeId
-          entityId
-          position
-        }` : ''}
-      }
-    }
-  `;
-
-  //console.log(query)
-
-  const orFilters = Array.isArray(searchText)
-    ? searchText.map(text => ({
-        value: {
-          property: normalizedProperty,
-          text: { is: cleanText(text) }
-        }
-      }))
-    : [{
-        value: {
-          property: normalizedProperty,
-          text: { is: cleanText(searchText) }
-        }
-      }];
-
-  const variables: Record<string, any> = {
-    orFilters,
-    ...(spaceId && { spaceId: normalizeToUUID_STRING(spaceId) }),
-    ...(typeId && {
-      typeId: normalizeToUUID_STRING(typeId),
-      typesPropertyId: SystemIds.TYPES_PROPERTY
-    }),
-    ...(notTypeId && {
-      notTypeId: normalizeToUUID_STRING(notTypeId),
-      typesPropertyId: SystemIds.TYPES_PROPERTY
-    })
-  };
-
-
-  const data = await fetchWithRetry(query, variables);
-  const entities = data?.data?.entities;
-
-  if (isArray) {
-    return entities;
-  }
-
-  if (entities?.length === 1) {
-    return entities[0]?.id;
-  } else if (entities?.length > 1) {
-    console.error("DUPLICATE ENTITIES FOUND...");
-    console.log(entities);
-    return entities[0]?.id;
-  }
-
-  return null;
-}
-
-export async function searchEntities_byType({
-  spaceId,
-  typeId
-}: {
-  spaceId?: string;
-  typeId?: string[];
-}) {
-  await new Promise(resolve => setTimeout(resolve, 200));
-
-  // GraphQL variables section
-  const query = `
-    query GetEntities(
-      ${spaceId ? '$spaceId: String!' : ''}
-      ${typeId ? '$typeId: [String!]' : ''}
-    ) {
-      entities(
-        ${spaceId ? 'spaceId: $spaceId,' : ''}
-        ${typeId ? 'filter: { types: { in: $typeId } }' : ''}
-      ) {
-        id
-        name
-        values {
-          spaceId
-          propertyId
-          value
-        }
-        relations {
-          id
-          spaceId
-          fromId
-          toId
-          typeId
-          entityId
-          position
-        }
-      }
-    }
-  `;
-
-  const variables: Record<string, any> = {
-    ...(typeId && { typeId: typeId }),
-    ...(spaceId && { spaceId: normalizeToUUID_STRING(spaceId) }),
-  };
-
-  console.log(typeId)
-  const data = await fetchWithRetry(query, variables);
-  const entities = data?.data?.entities;
-  return entities;
-}
-
-export async function searchEntities_byId({
-  spaceId,
-  searchText, // array of IDs
-}: {
-  spaceId?: string;
-  searchText?: string[]; // now explicitly expecting an array of IDs
-}) {
-  if (!searchText || !Array.isArray(searchText) || searchText.length === 0) {
-    return null;
-  }
-
-  await new Promise(resolve => setTimeout(resolve, 200));
-
-  const query = `
-    query GetEntities(
-      ${spaceId ? '$spaceId: String!' : ''}
-      $ids: [String!]!
-    ) {
-      entities(
-        ${spaceId ? 'spaceId: $spaceId,' : ''}
-        filter: {
-          id: { in: $ids }
-        }
-      ) {
-        id
-        name
-        values {
-          spaceId
-          propertyId
-          value
-        }
-        relations {
-          id
-          spaceId
-          fromId
-          toId
-          typeId
-          entityId
-          position
-        }
-      }
-    }
-  `;
-
-  const variables: Record<string, any> = {
-    ids: searchText.map(id => normalizeToUUID_STRING(id)),
-    ...(spaceId && { spaceId: normalizeToUUID_STRING(spaceId) }),
-  };
-
-  const data = await fetchWithRetry(query, variables);
-  return data?.data?.entities ?? [];
-}
-
-
-//export async function searchEntity(entityId: string, spaceId?: string) {
-export async function searchEntity({
-  entityId,
-  spaceId
-}: {
-  entityId: string;
-  spaceId?: string;
-}) {
-  await new Promise(resolve => setTimeout(resolve, 200));
-
-  const query = `
-    query GetEntity(
-      $entityId: String!
-      ${spaceId ? '$spaceId: String!' : ''}
-    ) {
-      entity(
-        id: $entityId
-        ${spaceId ? 'spaceId: $spaceId' : ''}
-      ) {
-        id
-        name
-        values {
-          spaceId
-          propertyId
-          value
-        }
-        relations {
-          id
-          spaceId
-          fromId
-          toId
-          typeId
-          entityId
-          position
-        }
-      }
-    }
-  `;
-
-  const variables: Record<string, any> = {
-    entityId: normalizeToUUID_STRING(entityId),
-    ...(spaceId && { spaceId: normalizeToUUID_STRING(spaceId) }),
-  };
-
-  const data = await fetchWithRetry(query, variables);
-  return data?.data?.entity;
-}
-
-
+// --- Normalize UUID Functions
 
 export function isUUID(str: string): boolean {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -741,15 +245,77 @@ export function normalizeToUUID_STRING(id: string): string {
     return deterministicIdFromString(id);
   }
 
-export function normalizeToUUID(id: string): Id.Id {
-    return Id.Id(normalizeToUUID_STRING(id))
+export function normalizeToUUID(id: string): Id {
+    return Id(normalizeToUUID_STRING(id))
   }
 
-
-
-
-
 export const propertyToIdMap: Record<string, string> = {
+  name: "LuBWqZAu6pz54eiJS5mLv8",
+  description: "LA1DqP5v6QAdsgLPXGF3YA",
+  avatar: "399xP4sGWSoepxeEnp3UdR", // avatar property
+  cover: "7YHk6qYkNDaAtNb8GwmysF",
+  types: "Jfmby78N4BCseZinBmdVov",
+  web_url: "WVVjk5okbvLspwdY1iTmwp",
+  x_url: "2eroVfdaXQEUw314r5hr35",
+  date_founded: "97JK5WV4YeGeU3k5UtV5RX", //Date founded property
+  episode_number: "54abe3ac-f2ac-416a-933d-8357831dff70",
+  listen_on: "71931b5f-1d6a-462e-81d9-5b8e85fb5c4b",
+  podcast: "09ed1fd1-aced-469e-98d5-f036e6aa29c8",
+  hosts: "5e3cc744-6e2f-4393-b1d6-d1ba577a2082",
+  guests: "efb29e05-c7d7-4b74-a349-61f63cabf5ae",
+  air_date: "253a0604-c129-4941-a4ad-07284971666b",
+  sources: "A7NJF2WPh8VhmvbfVWiyLo",
+  source_db_identifier: "CgLt3CoEzWmhPW3XGkakYa",
+  topics: "458fbc07-0dbf-4c92-8f57-16f3fdde7c32",
+  audio_url: "b5e70601-c985-4135-a5a0-7990b238a676",
+  duration: "fc52bf99-471b-42e0-8635-99361b6bf83f",
+  rss_feed_url: "4dd1a486-c1ad-48c6-b261-e4c8edf7ac65",
+  explicit: "4dd1a486-c1ad-48c6-b261-e4c8edf7ac65",
+  contributors: "c25ef1c6-8ba2-42c0-98cf-e2d2e052039d",
+  roles: "8fcfe5ef-3d91-47bd-8322-3830a998d26b",
+  renderable_type: "2316bbe1-c76f-4635-83f2-3e03b4f1fe46",
+  source_db_key: "d1fa97b3-2ab4-4f18-bd5a-91868a63a392",
+  supporting_quotes: "f9eeaf9d-9eb7-41b1-ac5d-257c6e82e526",
+  attributed_to: "4c537c03-24b2-44ce-ba44-ee9e0bf406bb",
+  text_blocks: "beaba5cb-a677-41a8-b353-77030613fc70",
+  data_blocks: "beaba5cb-a677-41a8-b353-77030613fc70",
+  tabs: "4d9cba1c-4766-4698-81cd-3273891a018b",
+  data_source_type: "1f69cc98-80d4-44ab-ad49-3df6a7b15ee4",
+  filter: "14a46854-bfd1-4b18-8215-2785c2dab9f3",
+  markdown_content: "e3e363d1-dd29-4ccb-8e6f-f3b76d99bc33",
+  notable_quotes: "dc637db0-3066-403c-a021-1d9eeea02d61",
+  notable_claims: "4b298933-92e8-4b91-ac40-73d0da7834f3",
+  targets: "b08235e4-725f-450b-899f-913b915ff58e",
+  start_offset: "d2ac07e6-ea44-49b8-b1bd-d2984ebdf5c6",
+  end_offset: "e449e3c7-c25b-4182-b4ce-d941b64b7b79",
+  broader_topics: "db8481b9-ecc5-4a54-8073-dae3b6f5a8f6",
+  subtopics: "a093cd2e-09fa-4c91-a1c0-d0bdcc68b439",
+};
+
+export const typeToIdMap: Record<string, string> = {
+  podcast: "69732974-c632-490d-81a3-12ea567b2a8e",
+  episode: "11feb0f9-fb3b-442c-818a-b5e97ffde26a",
+  person: "7ed45f2b-c48b-419e-8e46-64d5ff680b0d",
+  project: "484a18c5-030a-499c-b0f2-ef588ff16d50",
+  source: "706779bf-5377-44a6-8694-ea06cf87a3a2",
+  topic: "5ef5a586-0f27-4d8e-8f6c-59ae5b3e89e2",
+  role: "e4e366e9-d555-4b68-92bf-7358e824afd2",
+  podcast_appearance: "53841c11-19c6-473d-a093-b60968149f60",
+  claim: "96f859ef-a1ca-4b22-9372-c86ad58b694b",
+  quote: "043a171c-6918-4dc3-a7db-b8471ca6fcc2",
+  text_block: "76474f2f-0089-4e77-a041-0b39fb17d0bf",
+  data_block: "b8803a86-65de-412b-bb35-7e0c84adf473",
+  page: "480e3fc2-67f3-4993-85fb-acdf4ddeaa6b",
+  selector: "75e2a120-d283-4d27-a3bb-6e8e748a30c2",
+};
+
+export const renderableTypeToIdMap: Record<string, string> = {
+  url: "283127c9-6142-4684-92ed-90b0ebc7f29a",
+};
+
+
+
+export const propertyToIdMap_for_investment_rounds: Record<string, string> = {
   //Project entity
   name: "LuBWqZAu6pz54eiJS5mLv8",
   description: "LA1DqP5v6QAdsgLPXGF3YA",
@@ -906,7 +472,7 @@ export function processNewRelation({
     let position;
 
     if (!relationEntity) {
-      relationEntity = Id.generate();
+      relationEntity = IdUtils.generate();
     }
     if (last_position) {
       position = Position.generateBetween(last_position, null)
@@ -937,9 +503,9 @@ export function processNewRelation({
         
         geoProperties = entityOnGeo?.relations?.filter(
             (item) => 
-                item.spaceId === spaceId &&
-                item.typeId === normalizeToUUID_STRING(propertyId) &&
-                item.toId === normalizeToUUID_STRING(toEntityId)
+                item.spaceId == spaceId &&
+                item.typeId == normalizeToUUID_STRING(propertyId) &&
+                item.toEntityId == normalizeToUUID_STRING(toEntityId)
         );
         if (!geoProperties) {
             geoProperties = []
@@ -1031,7 +597,7 @@ export async function processNewRelation_v1({
     let position;
 
     if (!relationEntity) {
-      relationEntity = Id.generate();
+      relationEntity = IdUtils.generate();
     }
     if (last_position) {
       position = Position.generateBetween(last_position, null)
@@ -1064,7 +630,7 @@ export async function processNewRelation_v1({
             (item) => 
                 item.spaceId === spaceId &&
                 item.typeId === normalizeToUUID_STRING(propertyId) &&
-                item.toId === normalizeToUUID_STRING(toEntityId)
+                item.toEntityId === normalizeToUUID_STRING(toEntityId)
         );
         if (!geoProperties) {
             geoProperties = []

@@ -8,7 +8,8 @@ import * as dotenv from "dotenv";
 
 dotenv.config();
 
-export const DB_ID = "bseocOYqflQMDdju75d";
+//export const DB_ID = "bseocOYqflQMDdju75d";
+export const DB_ID = "crypto";
 
 interface PostgreSQLConfig {
   user: string;
@@ -19,16 +20,23 @@ interface PostgreSQLConfig {
 }
 
 export const TABLES = {
-  PROJECTS: "projects",
-  TAGS: "tags",
-  TYPES: "types",
-  INVESTMENT_ROUNDS: "investment_rounds",
+  PODCASTS: "podcasts",
+  EPISODES: "podcast_episodes",
+  GUESTS: "podcast_credits",
+  HOSTS: "podcast_hosts",
+  PODCAST_APPS: "podcast_apps",
+  EPISODE_TAGS: "podcast_episode_tags",
+  PODCAST_TAGS: "podcast_tags",
+  PODCHASER_CATEGORIES: "podchaser_categories",
+  PEOPLE: "people",
+  EXTERNAL_IDS: "podcast_external_ids",
   PLATFORMS: "platforms",
-  MARKET_DATA: "market_data",
-  ASSETS: "assets2",
-  ECOSYSTEMS: "ecosystems",
-  DAPPS: "dapps",
-  DAPP_MARKET_DATA: "dapp_market_data"
+  LISTEN_ON: "podcast_listen_on_urls",
+  CLAIMS: "claims",
+  QUOTES: "quotes",
+  CLAIM_QUOTES: "claim_quotes",
+  TAG_MAP: "tag_map",
+  TAGS: "tags",
 } as const;
 
 const validateEnvironmentVariables = (): PostgreSQLConfig => {

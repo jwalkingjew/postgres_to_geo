@@ -3,11 +3,11 @@ import path from 'path';
 import { filterOps, getSpaces, testnetWalletAddress } from './src/constants_v2';
 import { publish } from './src/publish';
 
-function readOpsFromFile(index: number): any {
-  const filePath = path.join(__dirname, 'ethcc_testnet_ops', `ethcc_ops_${index}.txt`);
+function readOpsFromFile(dir: string, fn: string): any {
+  const filePath = path.join(__dirname, dir, fn);
 
   if (!fs.existsSync(filePath)) {
-    console.error(`File ethcc_ops_${index}.txt does not exist`);
+    console.error(`File ${fn} does not exist`);
     return null;
   }
 
@@ -15,10 +15,10 @@ function readOpsFromFile(index: number): any {
 
   try {
     const ops = JSON.parse(fileContents);
-    console.log(`Read ${ops.length} ops from ethcc_ops_${index}.txt`);
+    console.log(`Read ${ops.length} ops from ${fn}`);
     return ops;
   } catch (err) {
-    console.error(`Failed to parse JSON from file ethcc_ops_${index}.txt`, err);
+    console.error(`Failed to parse JSON from file ${fn}`, err);
     return null;
   }
 }
@@ -85,7 +85,7 @@ async function publishOps(ops: any) {
 
 
 const index_num = 1;
-const ops = readOpsFromFile(index_num);
+const ops = readOpsFromFile("src", "test_push_quotes_and_transcript_02.txt");
 
 if (true) {
   for (const [i, op] of ops.entries()) {

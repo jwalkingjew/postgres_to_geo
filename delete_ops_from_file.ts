@@ -1,14 +1,14 @@
 import fs from 'fs';
 import path from 'path';
-import { addSpace, filterOps, GEO_IDS, getSpaces, testnetWalletAddress } from './src/constants_v2';
-import { publish } from './src/publish';
+import { addSpace, filterOps, GEO_IDS, getSpaces, testnetWalletAddress } from './src/constants_v2.ts';
+import { publish } from './src/publish.ts';
 import { Graph, type Op } from '@graphprotocol/grc-20';
 
 function readOpsFromFile(index: number): any {
-  const filePath = path.join(__dirname, 'ethcc_testnet_ops_to_publish', `ethcc_ops_${index}.txt`);
+  const filePath = path.join(__dirname, 'src', `test_push_podcast_0${index}.txt`);
 
   if (!fs.existsSync(filePath)) {
-    console.error(`File ethcc_ops_${index}.txt does not exist`);
+    console.error(`File test_push_podcast_${index}.txt does not exist`);
     return null;
   }
 
@@ -16,10 +16,10 @@ function readOpsFromFile(index: number): any {
 
   try {
     const ops = JSON.parse(fileContents);
-    console.log(`Read ${ops.length} ops from ethcc_ops_${index}.txt`);
+    console.log(`Read ${ops.length} ops from test_push_podcast_${index}.txt`);
     return ops;
   } catch (err) {
-    console.error(`Failed to parse JSON from file ethcc_ops_${index}.txt`, err);
+    console.error(`Failed to parse JSON from file test_push_podcast_${index}.txt`, err);
     return null;
   }
 }
@@ -35,7 +35,7 @@ function printOps(ops: any) {
     const outputText = JSON.stringify(ops, null, 2);
 
     // Write to file
-    const filename = `ethcc_ops_delete.txt`;
+    const filename = `test_push_podcast_delete.txt`;
     const filePath = path.join(outputDir, filename);
     fs.writeFileSync(filePath, outputText);
 
@@ -91,10 +91,10 @@ function getPropertyIdsFromUpdateOp(ops: any[], entityId: string): string[] {
 
 
 const del_ops: Array<Op> = [];
-const currSpaceId = GEO_IDS.cryptoSpace;
+const currSpaceId = GEO_IDS.podcastsSpace;
 let addOps;
 
-const index_num = 48;
+const index_num = 9;
 const ops = readOpsFromFile(index_num);
 
 const del_ent_vals: Array<Op> = [];

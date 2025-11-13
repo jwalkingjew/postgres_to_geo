@@ -1,7 +1,7 @@
 import { SystemIds } from "@graphprotocol/grc-20";
 import { GEO_IDS, normalizeToUUID_STRING, propertyToIdMap, propertyToTypeIdMap, searchEntities, searchEntities_byId, searchEntities_byType, searchEntities_new } from "./src/constants_v2";
 import PostgreSQLClient, { TABLES } from "./src/postgres-client";
-import { processProject } from "./ethcc_post_project";
+import { processProject } from "./junk/ethcc_post_project";
 import * as fs from "fs";
 
 
